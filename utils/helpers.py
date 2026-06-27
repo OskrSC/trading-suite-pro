@@ -15,25 +15,26 @@ warnings.filterwarnings('ignore')
 
 
 # ============================================
-# OBTENCIÓN DE DATOS
+# OBTENCIÓN DE DATOS (MEJORADO PARA CLOUD)
 # ============================================
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner="Cargando datos de mercado...")
 def obtener_datos(ticker: str, periodo: str = "1y") -> pd.DataFrame:
     """
-    Obtiene datos históricos de Yahoo Finance con manejo robusto de errores
+    Obtiene datos históricos de Yahoo Finance con fallback automático a datos demo
+    Optimizado para funcionar en Streamlit Cloud
     """
-    max_reintentos = 3
-    intento = 0
+    import time
     
-    while intento < max_reintentos:
-        try:
-            ticker_obj = yf.Ticker(ticker)
-            data = ticker_obj.history(period=periodo, auto_adjust=True)
-            
-            if data.empty:
-                raise ValueError(f"No se encontraron datos para {ticker}")
-            
+    # Intentar descargar datos reales
+    try:
+        ticker_obj = yf.Ticker(ticker)
+        
+        # Intento 1: Usar history()
+        data = ticker_obj.history(period=periodo, auto_adjust=True)
+        
+        if not data.empty and len(data) > 10:
+            # Limpiar y formatear datos
             data = data[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
             data = data.dropna()
             
@@ -41,47 +42,74 @@ def obtener_datos(ticker: str, periodo: str = "1y") -> pd.DataFrame:
                 data.index = pd.to_datetime(data.index)
             
             return data
-            
-        except Exception as e:
-            intento += 1
-            if intento < max_reintentos:
-                time.sleep(2 * intento)
-                continue
-            else:
-                st.warning(
-                    f"⚠️ **No se pudieron descargar datos de {ticker}**\n\n"
-                    f"Error: {str(e)}\n\n"
-                    f"Usando datos de demostración."
-                )
-                return _generar_datos_demo(ticker, periodo)
+        
+        # Si data está vacío, intentar método alternativo
+        raise ValueError("No data returned")
+        
+    except Exception as e:
+        # Si falla, usar datos de demostración
+        st.warning(
+            f"⚠️ **No se pudieron descargar datos de {ticker} desde Yahoo Finance**\n\n"
+            f"Motivo: {str(e)}\n\n"
+            f"✅ Usando datos de demostración para continuar."
+        )
+        return _generar_datos_demo(ticker, periodo)
 
 
 def _generar_datos_demo(ticker: str, periodo: str) -> pd.DataFrame:
-    """Genera datos de demostración cuando Yahoo Finance no está disponible"""
+    """
+    Genera datos de demostración realistas cuando Yahoo Finance no está disponible
+    """
+    # Mapear período a días
     dias_map = {
         '1mo': 30, '3mo': 90, '6mo': 180, '1y': 365,
         '2y': 730, '5y': 1825, 'max': 3650
     }
     
     dias = dias_map.get(periodo, 365)
+    
+    # Generar datos aleatorios con seed basado en ticker (consistente)
     np.random.seed(hash(ticker) % 2**32)
     
-    fechas = pd.date_range(end=datetime.now(), periods=dias, freq='D')
-    precio_base = np.random.uniform(50, 500)
+    # Crear fechas (excluir fines de semana para simular mercado de valores)
+    fechas = pd.date_range(end=datetime.now(), periods=dias, freq='B')  # 'B' = Business days
     
-    retornos = np.random.normal(0.0005, 0.02, dias)
+    # Precio base aleatorio basado en el ticker
+    precio_base = 50 + (hash(ticker) % 450)  # Entre $50 y $500
+    
+    # Generar retornos con tendencia alcista moderada y volatilidad realista
+    retornos = np.random.normal(0.0003, 0.018, len(fechas))
+    
+    # Añadir algunos eventos extremos (crash y rally)
+    num_eventos = max(2, len(fechas) // 100)
+    eventos_idx = np.random.choice(len(fechas), size=num_eventos, replace=False)
+    for idx in eventos_idx:
+        if np.random.random() > 0.5:
+            retornos[idx] = np.random.uniform(-0.08, -0.03)  # Crash
+        else:
+            retornos[idx] = np.random.uniform(0.03, 0.08)    # Rally
+    
+    # Calcular precios
     precios = precio_base * np.cumprod(1 + retornos)
     
+    # Generar OHLCV realista
     data = pd.DataFrame({
-        'Open': precios * (1 + np.random.uniform(-0.01, 0.01, dias)),
-        'High': precios * (1 + np.abs(np.random.normal(0, 0.015, dias))),
-        'Low': precios * (1 - np.abs(np.random.normal(0, 0.015, dias))),
+        'Open': precios * (1 + np.random.uniform(-0.008, 0.008, len(fechas))),
+        'High': precios * (1 + np.abs(np.random.normal(0, 0.012, len(fechas)))),
+        'Low': precios * (1 - np.abs(np.random.normal(0, 0.012, len(fechas)))),
         'Close': precios,
-        'Volume': np.random.randint(1000000, 50000000, dias)
+        'Volume': np.random.randint(5000000, 80000000, len(fechas))
     }, index=fechas)
     
+    # Asegurar que High sea el máximo y Low el mínimo de cada día
     data['High'] = data[['Open', 'High', 'Close']].max(axis=1)
     data['Low'] = data[['Open', 'Low', 'Close']].min(axis=1)
+    
+    # Redondear a 2 decimales
+    data['Open'] = data['Open'].round(2)
+    data['High'] = data['High'].round(2)
+    data['Low'] = data['Low'].round(2)
+    data['Close'] = data['Close'].round(2)
     
     return data
 
