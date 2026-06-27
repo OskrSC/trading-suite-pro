@@ -1,0 +1,20 @@
+[theme]
+primaryColor = "#10b981"
+backgroundColor = "#0f172a"
+secondaryBackgroundColor = "#1e293b"
+textColor = "#f1f5f9"
+font = "sans serif"
+
+[server]
+headless = true
+port = 8501
+# ✅ CORREGIDO: Desactivar XSRF o activar CORS (no ambos)
+enableCORS = true
+enableXsrfProtection = false
+maxUploadSize = 200
+
+[browser]
+gatherUsageStats = false
+
+[runner]
+fastReruns = true

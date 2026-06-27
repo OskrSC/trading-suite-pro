@@ -1,0 +1,19 @@
+# Librerías principales
+streamlit>=1.37.0
+pandas>=2.3.2
+numpy>=2.0.0
+
+# yfinance y plotly
+plotly==5.22.0
+yfinance==0.2.40
+
+# scikit-learn
+scikit-learn==1.5.0
+
+# Librerías adicionales
+pandas-ta
+nltk==3.8.1
+textblob==0.18.0
+requests==2.32.3
+beautifulsoup4==4.12.3
+python-dateutil==2.9.0
